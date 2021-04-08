@@ -7,20 +7,6 @@ type User struct {
 	Admin bool   `json:"admin"`
 }
 
-type File struct {
-	Name  string `json:"name"`
-	Ext   string `json:"ext"`
-	Owner string `json:"owner"`
-	Size  int64  `json:"size"`
-}
-
-type Folder struct {
-	ID    string   `json:"id"`
-	Owner string   `json:"owner"`
-	Name  string   `json:"name"`
-	Files []string `json:"-"`
-}
-
 type Config struct {
 	SpacesConfig SpacesConfig
 	CdnEndpoint  string
@@ -46,4 +32,19 @@ type UploadedFile struct {
 type ImageResponse struct {
 	Url     string `json:"url"`
 	Success bool   `json:"success"`
+	Code    int    `json:"code"`
+}
+
+type DeletedImageResponse struct {
+	Id      string `json:"id"`
+	Success bool   `json:"success"`
+	Code    int    `json:"code"`
+}
+
+type FolderPostRequest struct {
+	Name string `json:"name"`
+}
+
+type FolderPatchRequest struct {
+	Files []string `json:"files"`
 }

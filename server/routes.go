@@ -1,85 +1,150 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 
-	"github.com/fatih/structs"
 	"github.com/gofiber/fiber/v2"
 )
 
 func uploadFileRoute(ctx *fiber.Ctx) error {
-	fileHeader, err := ctx.FormFile("file")
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get uploaded file.")
+	file, respErr := UploadFile(ctx)
+	if respErr != nil {
+		return ctx.Send(respErr.ToJSON())
 	}
 
-	owner := "solaris" //ctx.Locals("user").(string)
-	uploadedFile, uploadErr := uploadFile(owner, fileHeader)
-
-	if uploadErr != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, uploadErr.Error())
-	}
-
-	b, jsonErr := json.Marshal(ImageResponse{
-		Url:     fmt.Sprintf("%v/%v", cdnConfig.CdnEndpoint, uploadedFile),
+	resp := ImageResponse{
+		Code:    200,
+		Url:     file.URL(),
 		Success: true,
-	})
-
-	if jsonErr != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, jsonErr.Error())
 	}
 
-	return ctx.Send(b)
-}
-
-func getFileInfoRoute(ctx *fiber.Ctx) error {
-	id := ctx.Params("id")
-	rec, err := getFileRecord(id)
-
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "An internal error occurred while retriving file.")
-	}
-
-	file, _ := json.Marshal(rec)
-	return ctx.Send(file)
+	return ctx.Send(toJSON(resp))
 }
 
 func getFileRoute(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
-	rec, err := getFileRecord(id)
+	file, respErr := FileFor(id)
 
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "An internal error occurred while retriving file.")
+	if respErr != nil {
+		return ctx.Send(respErr.ToJSON())
 	}
 
-	imageURL := fmt.Sprintf("%s/%s%s", cdnConfig.SpacesConfig.SpacesUrl, rec.Name, rec.Ext)
+	imageURL := file.ImageURL()
 
 	res, err := http.Head(imageURL)
 	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		respErr := NewResponseByError(fiber.StatusInternalServerError, err)
+		return ctx.Send(respErr.ToJSON())
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return fiber.NewError(res.StatusCode, "An error occurred redirecting to the image")
+		respErr := NewResponse(res.StatusCode, "An error occurred redirecting to the image")
+		return ctx.Send(respErr.ToJSON())
 	}
 
 	return ctx.Redirect(imageURL)
 }
 
-func getFilesRoute(ctx *fiber.Ctx) error {
+func getFileInfoRoute(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
-	folder, files, err := getFolderRecord(id)
+	file, respErr := FileFor(id)
 
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "An internal error occurred while retriving folder info.")
+	if respErr != nil {
+		return ctx.Send(respErr.ToJSON())
 	}
 
-	folderMap := structs.Map(folder)
-	delete(folderMap, "files")
-	folderMap["files"] = files
-
-	folderJSON, _ := json.Marshal(folderMap)
-	return ctx.Send(folderJSON)
+	return ctx.Send(file.ToJSON())
 }
+
+func deleteFileRoute(ctx *fiber.Ctx) error {
+	id := ctx.Params("id")
+
+	file, respErr := FileFor(id)
+	if respErr != nil {
+		return ctx.Send(respErr.ToJSON())
+	}
+
+	respErr = file.CheckOwner(ctx.Locals("user").(string))
+	if respErr != nil {
+		return ctx.Send(respErr.ToJSON())
+	}
+
+	respErr = file.Delete()
+	if respErr != nil {
+		return ctx.Send(respErr.ToJSON())
+	}
+
+	return ctx.Send(toJSON(fiber.Map{
+		"id":      id,
+		"success": true,
+		"code":    200,
+	}))
+}
+
+// func createFolderRoute(ctx *fiber.Ctx) error {
+// 	owner := "solaris" //ctx.Locals("user").(string)
+// 	body := new(FolderPostRequest)
+
+// 	if err := ctx.BodyParser(body); err != nil {
+// 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+// 	}
+
+// 	folder, err := createFolderRecord(body.Name, owner)
+// 	if err != nil {
+// 		return fiber.NewError(fiber.StatusInternalServerError, "An internal error occurred while retriving folder info.")
+// 	}
+
+// 	folderJSON, _ := json.Marshal(fiber.Map{
+// 		"name": folder.Name,
+// 		"id":   folder.ID,
+// 	})
+
+// 	return ctx.Send(folderJSON)
+// }
+
+// func getFolderRoute(ctx *fiber.Ctx) error {
+// 	id := ctx.Params("id")
+// 	folder, files, err := getFolderRecord(id)
+
+// 	if err != nil {
+// 		if status.Code(err) == codes.NotFound {
+// 			return fiber.NewError(fiber.StatusNotFound, "This folder does not exist.")
+// 		}
+
+// 		return fiber.NewError(fiber.StatusInternalServerError, "An internal error occurred while retriving folder info.")
+// 	}
+
+// 	folderMap := structs.Map(folder)
+// 	delete(folderMap, "files")
+// 	folderMap["files"] = files
+
+// 	folderJSON, _ := json.Marshal(folderMap)
+// 	return ctx.Send(folderJSON)
+// }
+
+// func updateFolderRoute(ctx *fiber.Ctx) error {
+// 	id := ctx.Params("id")
+// 	owner := "solaris" //ctx.Locals("user").(string)
+// 	body := new(FolderPatchRequest)
+
+// 	if err := ctx.BodyParser(body); err != nil {
+// 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+// 	}
+
+// 	folder, err := getFolderRecord(id)
+// 	if err != nil {
+// 		return fiber.NewError(fiber.StatusInternalServerError, "An internal error occurred while retriving folder info.")
+// 	}
+
+// 	success, err := addFilesToFolderRecord(id, owner, body.Files)
+// 	if err != nil {
+// 		return fiber.NewError(fiber.StatusInternalServerError, "An internal error occurred while retriving folder info.")
+// 	}
+
+// 	folderJSON, _ := json.Marshal(fiber.Map{
+// 		"name": folder.Name,
+// 		"id":   folder.ID,
+// 	})
+
+// 	return ctx.Send(folderJSON)
+// }

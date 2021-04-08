@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"math/rand"
-	"mime/multipart"
-	"net/http"
-	"path/filepath"
 	"time"
 
+	"github.com/fatih/structs"
 	"github.com/gofiber/fiber/v2"
-	"github.com/minio/minio-go"
 )
 
 func authorize(ctx *fiber.Ctx) error {
@@ -30,97 +28,50 @@ func authorize(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
-func uploadFile(owner string, fileHeader *multipart.FileHeader) (string, error) {
-	size := fileHeader.Size
-	buffer := make([]byte, size)
-
-	file, headerOpenErr := fileHeader.Open()
-	if headerOpenErr != nil {
-		return "", headerOpenErr
-	}
-
-	_, fileReadErr := file.Read(buffer)
-	if fileReadErr != nil {
-		return "", fileReadErr
-	}
-
-	file.Close()
-
-	contentType := http.DetectContentType(buffer)
-	fileID := randSeq(7)
-	fileExt := filepath.Ext(fileHeader.Filename)
-	fileName := fileID + fileExt
-
-	_, uploadErr := cdnSpaces.PutObject(
-		cdnConfig.SpacesConfig.SpacesName,
-		fileName,
-		file,
-		fileHeader.Size,
-		minio.PutObjectOptions{
-			ContentType:  contentType,
-			UserMetadata: map[string]string{"x-amz-acl": "public-read"},
-		},
-	)
-
-	if uploadErr != nil {
-		return "", uploadErr
-	}
-
-	createFileRecord(fileID, fileExt, owner, size)
-
-	return fileID, nil
+func dummyMiddleware(ctx *fiber.Ctx) error {
+	ctx.Locals("user", "solaris")
+	return ctx.Next()
 }
 
-func createFileRecord(ID string, ext string, owner string, size int64) {
-	firebaseCtx := context.Background()
+func contains(values []string, value string) bool {
+	for _, elem := range values {
+		if elem == value {
+			return true
+		}
+	}
 
-	cdnFirestore.Collection("files").Doc(ID).Set(firebaseCtx, File{
-		Name:  ID,
-		Ext:   ext,
-		Owner: owner,
-		Size:  size,
-	})
+	return false
 }
 
-func getFileRecord(id string) (*File, error) {
-	firebaseCtx := context.Background()
-
-	doc, err := cdnFirestore.Collection("files").Doc(id).Get(firebaseCtx)
-	if err != nil {
-		return nil, err
+func indexOf(values []string, value string) int {
+	for index, elem := range values {
+		if elem == value {
+			return index
+		}
 	}
 
-	file := new(File)
-	doc.DataTo(file)
-
-	return file, nil
+	return -1
 }
 
-func getFolderRecord(id string) (*Folder, []*File, error) {
-	firebaseCtx := context.Background()
+func addField(s []byte, k string, v interface{}) []byte {
+	dummyMap := new(map[string]interface{})
+	_ = json.Unmarshal(s, dummyMap)
+	(*dummyMap)[k] = v
+	return toJSON(dummyMap)
+}
 
-	doc, err := cdnFirestore.Collection("folders").Doc("discord").Get(firebaseCtx)
-	if err != nil {
-		return nil, nil, err
+func toJSON(s interface{}) []byte {
+	body, _ := json.Marshal(s)
+	return body
+}
+
+// combines the object, latter fields take priority of existing fields
+func combine(main map[string]interface{}, rest ...map[string]interface{}) map[string]interface{} {
+	for _, m := range rest {
+		structs.FillMap(m, main)
 	}
 
-	var files []*File
-	folder := new(Folder)
-	doc.DataTo(folder)
-
-	docs, err := cdnFirestore.Collection("files").Where("id", "in", folder.Files).Documents(firebaseCtx).GetAll()
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, doc := range docs {
-		file := new(File)
-		doc.DataTo(file)
-		files = append(files, file)
-	}
-
-	return folder, files, nil
+	return main
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -134,4 +85,41 @@ func randSeq(n int) string {
 	}
 
 	return string(b)
+}
+
+type JSONResponse struct {
+	Success bool        `json:"success"`
+	Code    int         `json:"code"`
+	Message string      `json:"message,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+func NewResponse(code int, message string) *JSONResponse {
+	return &JSONResponse{
+		Message: message,
+		Code:    code,
+	}
+}
+
+func NewResponseByError(code int, err error) *JSONResponse {
+	return &JSONResponse{
+		Message: err.Error(),
+		Code:    code,
+	}
+}
+
+func (response *JSONResponse) SetSuccess(success bool) {
+	response.Success = success
+}
+
+func (response *JSONResponse) SetCode(code int) {
+	response.Code = code
+}
+
+func (response *JSONResponse) SetData(data interface{}) {
+	response.Data = data
+}
+
+func (response *JSONResponse) ToJSON() []byte {
+	return toJSON(response)
 }
