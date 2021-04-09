@@ -23,12 +23,6 @@ type SpacesConfig struct {
 	SpacesRegion    string
 }
 
-type UploadedFile struct {
-	ID   string
-	Ext  string
-	Size int64
-}
-
 type ImageResponse struct {
 	Url     string `json:"url"`
 	Success bool   `json:"success"`
@@ -46,5 +40,13 @@ type FolderPostRequest struct {
 }
 
 type FolderPatchRequest struct {
-	Files []string `json:"files"`
+	Name   string   `json:"name"`
+	Add    []string `json:"add"`
+	Remove []string `json:"remove"`
+}
+
+type Embed struct {
+	Type         string `json:"type"`
+	AuthorName   string `json:"author_name"`
+	ProviderName string `json:"provider_name"`
 }

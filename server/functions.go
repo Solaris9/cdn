@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"time"
 
-	"github.com/fatih/structs"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -53,25 +53,42 @@ func indexOf(values []string, value string) int {
 	return -1
 }
 
-func addField(s []byte, k string, v interface{}) []byte {
-	dummyMap := new(map[string]interface{})
-	_ = json.Unmarshal(s, dummyMap)
-	(*dummyMap)[k] = v
-	return toJSON(dummyMap)
-}
-
 func toJSON(s interface{}) []byte {
 	body, _ := json.Marshal(s)
 	return body
 }
 
-// combines the object, latter fields take priority of existing fields
-func combine(main map[string]interface{}, rest ...map[string]interface{}) map[string]interface{} {
-	for _, m := range rest {
-		structs.FillMap(m, main)
+func Set(s []string) []string {
+	seen := make(map[string]struct{}, len(s))
+	j := 0
+	for _, v := range s {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		s[j] = v
+		j++
 	}
+	return s[:j]
+}
 
-	return main
+func roundFloat64(num float64) string {
+	return fmt.Sprintf("%.2f", num)
+}
+
+func getFileSize(size int64) string {
+	if size < 1024 {
+		return fmt.Sprintf("%vB", size)
+	} else if size < 1048576 {
+		num := float64(size / 1024)
+		return fmt.Sprintf("%vKiB", roundFloat64(num))
+	} else if size < 1073741824 {
+		num := float64(size / 1048576)
+		return fmt.Sprintf("%vMiB", roundFloat64(num))
+	} else {
+		num := float64(size / 1073741824)
+		return fmt.Sprintf("%vGiB", roundFloat64(num))
+	}
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -122,4 +139,25 @@ func (response *JSONResponse) SetData(data interface{}) {
 
 func (response *JSONResponse) ToJSON() []byte {
 	return toJSON(response)
+}
+
+type JSONModifier struct {
+	Map map[string]interface{}
+}
+
+func NewJSONModifer(data interface{}) *JSONModifier {
+	jsonMap := new(map[string]interface{})
+	json.Unmarshal(toJSON(data), jsonMap)
+
+	return &JSONModifier{
+		Map: *jsonMap,
+	}
+}
+
+func (m *JSONModifier) AddField(key string, value interface{}) {
+	m.Map[key] = value
+}
+
+func (m *JSONModifier) ToJSON() []byte {
+	return toJSON(m.Map)
 }

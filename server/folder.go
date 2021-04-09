@@ -2,10 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
-	"github.com/fatih/structs"
+	"cloud.google.com/go/firestore"
 	"github.com/gofiber/fiber/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,6 +14,7 @@ type Folder struct {
 	Files   []*File
 	Data    *FolderData
 	Created time.Time
+	Updates []firestore.Update
 }
 
 type FolderData struct {
@@ -55,7 +55,7 @@ func FolderFor(id string, withFiles bool) (*Folder, *JSONResponse) {
 	doc, err := cdnFirestore.Collection("folders").Doc(id).Get(firebaseCtx)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			return nil, NewResponse(fiber.StatusNotFound, "File not found")
+			return nil, NewResponse(fiber.StatusNotFound, "Folder not found")
 		}
 
 		return nil, NewResponseByError(fiber.StatusInternalServerError, err)
@@ -77,7 +77,7 @@ func FolderFor(id string, withFiles bool) (*Folder, *JSONResponse) {
 func (folder *Folder) GetFiles() error {
 	firebaseCtx := context.Background()
 
-	docs, err := cdnFirestore.Collection("files").Where("id", "in", folder.Data.Files).Documents(firebaseCtx).GetAll()
+	docs, err := cdnFirestore.Collection("files").Where("ID", "in", folder.Data.Files).Documents(firebaseCtx).GetAll()
 
 	if err != nil {
 		return err
@@ -131,34 +131,83 @@ func (folder *Folder) GetFile(id string) *File {
 	return nil
 }
 
-// a list of ids to add or remove, if the folder has the id then it'll remove it else it adds it, optionally cache all files again
-func (folder *Folder) ModifyFiles(files []string, cacheFiles bool) {
-	var addedFiles bool
+func (folder *Folder) IsChanged() bool {
+	return len(folder.Updates) > 0
+}
 
-	for _, file := range files {
-		index := indexOf(folder.Data.Files, file)
+// a list of ids to add optionally cache all files again
+func (folder *Folder) SetName(name string) {
+	folder.Data.Name = name
 
-		if index > 0 {
-			folder.Data.Files = append(folder.Data.Files[:index], folder.Data.Files[index+1:]...)
-			folder.Files = removeFile(folder.Files, file)
-		} else {
-			addedFiles = true
-			folder.Data.Files = append(folder.Data.Files, file)
-		}
-	}
+	folder.Updates = append(folder.Updates, firestore.Update{
+		Path:  "Name",
+		Value: folder.Data.Name,
+	})
+}
 
-	if cacheFiles && addedFiles {
+// a list of ids to add optionally cache all files again
+func (folder *Folder) AddFiles(files []string, cacheFiles bool) {
+	folder.Data.Files = Set(append(folder.Data.Files, files...))
+
+	folder.Updates = append(folder.Updates, firestore.Update{
+		Path:  "Files",
+		Value: folder.Data.Files,
+	})
+
+	if cacheFiles {
 		folder.GetFiles()
 	}
 }
 
+// a list of ids to remove
+func (folder *Folder) RemoveFiles(files []string) {
+	for _, file := range files {
+		if index := indexOf(folder.Data.Files, file); index != -1 {
+			folder.Data.Files = append(folder.Data.Files[:index], folder.Data.Files[index+1:]...)
+		}
+	}
+
+	folder.Updates = append(folder.Updates, firestore.Update{
+		Path:  "Files",
+		Value: folder.Data.Files,
+	})
+}
+
+func (folder *Folder) CheckOwner(owner string) *JSONResponse {
+	if folder.Data.Owner != owner {
+		return NewResponse(fiber.StatusForbidden, "Cannot delete folder not owned.")
+	}
+
+	return nil
+}
+
+func (folder *Folder) Delete() *JSONResponse {
+	firebaseCtx := context.Background()
+	_, err := cdnFirestore.Collection("files").Doc(folder.Data.ID).Delete(firebaseCtx)
+
+	if err != nil {
+		return NewResponseByError(fiber.StatusInternalServerError, err)
+	}
+
+	return nil
+}
+
 // converts the folder object to a json object
 func (folder *Folder) ToJSON() []byte {
-	dataMap := structs.Map(folder.Data)
-	dataMap["date"] = folder.Created
+	dataMap := NewJSONModifer(folder.Data)
+	dataMap.AddField("date", folder.Created)
+	return dataMap.ToJSON()
+}
 
-	json, _ := json.Marshal(dataMap)
-	return json
+func (folder *Folder) Save() *JSONResponse {
+	firebaseCtx := context.Background()
+	_, err := cdnFirestore.Collection("folders").Doc(folder.Data.ID).Update(firebaseCtx, folder.Updates)
+
+	if err != nil {
+		return NewResponseByError(fiber.StatusInternalServerError, err)
+	}
+
+	return nil
 }
 
 func removeFile(files []*File, id string) []*File {

@@ -5,7 +5,6 @@ go 1.16
 require (
 	cloud.google.com/go/firestore v1.5.0
 	firebase.google.com/go/v4 v4.4.0
-	github.com/fatih/structs v1.1.0
 	github.com/go-ini/ini v1.62.0 // indirect
 	github.com/gofiber/fiber/v2 v2.7.1
 	github.com/joho/godotenv v1.3.0

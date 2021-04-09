@@ -54,7 +54,8 @@ func init() {
 func setUpRoutes() {
 	server := fiber.New()
 
-	server.Get("/:id", getFileRoute)
+	server.Get("/:id.:ext", getFileRoute)
+	server.Get("/oembed/:id.:ext", getOGEmbedRoute)
 
 	server.Static("/", "../client/public")
 
@@ -67,18 +68,16 @@ func setUpRoutes() {
 	// api.Get("/ws", authorize, getWebSocket) // auth
 
 	// single files
-	// api.Get("/file/:id", getFileRoute)
 	api.Get("/file/:id", getFileInfoRoute)
+	// no reason to update files just yet
 	// api.Patch("/file/:id/info", authorize, updateFileInfoRoute) // auth
 	api.Delete("/file/:id", dummyMiddleware, deleteFileRoute) // auth
 
-	// server.Get("/oembed/:id", getOGEmbedRoute)
-
 	// folder of files
-	// api.Post("/folder", createFolderRoute) // auth
-	// api.Get("/folder/:id", getFolderRoute)
-	// api.Patch("/folder/:id", updateFolderRoute) // auth
-	// api.Delete("/folder/:id", deleteFilesRoute) // auth
+	api.Post("/folder", dummyMiddleware, createFolderRoute) // auth
+	api.Get("/folder/:id", getFolderRoute)
+	api.Patch("/folder/:id", dummyMiddleware, updateFolderRoute)  // auth
+	api.Delete("/folder/:id", dummyMiddleware, deleteFolderRoute) // auth
 
 	log.Fatal(server.Listen(":3000"))
 }

@@ -38,9 +38,10 @@ func (file *File) Name() string {
 }
 
 func (file *File) ToJSON() []byte {
-	dataMap := toJSON(file.Data)
-	addField(dataMap, "date", file.Created)
-	return dataMap
+	dataMap := NewJSONModifer(file.Data)
+	dataMap.AddField("date", file.Created)
+	dataMap.AddField("url", file.ImageURL())
+	return dataMap.ToJSON()
 }
 
 func FileFor(id string) (*File, *JSONResponse) {
@@ -170,6 +171,24 @@ func deleteFileRecord(id string) *JSONResponse {
 	firebaseCtx := context.Background()
 	_, err := cdnFirestore.Collection("files").Doc(id).Delete(firebaseCtx)
 
+	if err != nil {
+		return NewResponseByError(fiber.StatusInternalServerError, err)
+	}
+
+	return nil
+}
+
+func deleteFileRecords(ids ...string) *JSONResponse {
+	firebaseCtx := context.Background()
+
+	batch := cdnFirestore.Batch()
+	docs, err := cdnFirestore.Collection("files").Where("ID", "in", ids).Documents(firebaseCtx).GetAll()
+
+	for _, doc := range docs {
+		batch.Delete(doc.Ref)
+	}
+
+	_, err = batch.Commit(firebaseCtx)
 	if err != nil {
 		return NewResponseByError(fiber.StatusInternalServerError, err)
 	}
