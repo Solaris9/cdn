@@ -8,16 +8,17 @@ import (
 	"cloud.google.com/go/firestore"
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
-	"github.com/minio/minio-go"
 	"google.golang.org/api/option"
 )
 
 var cdnApp *firebase.App
 var cdnAuth *auth.Client
 var cdnFirestore *firestore.Client
-var cdnSpaces *minio.Client
+var cdnS3Config *aws.Config
 var cdnConfig *Config
 
 func main() {
@@ -43,9 +44,15 @@ func init() {
 		},
 		CdnEndpoint: os.Getenv("CDN_ENDPOINT"),
 		AccessToken: os.Getenv("ACCESS_TOKEN"),
+		Production:  os.Getenv("PRODUCTION") != "false",
 	}
 
-	setUpSpaces()
+	cdnS3Config = &aws.Config{
+		Credentials: credentials.NewStaticCredentials(cdnConfig.SpacesConfig.SpacesAccessKey, cdnConfig.SpacesConfig.SpacesSecretKey, ""),
+		Endpoint:    aws.String(cdnConfig.SpacesConfig.SpacesEndpoint),
+		Region:      aws.String(cdnConfig.SpacesConfig.SpacesRegion),
+	}
+
 	setUpFirebase()
 	setUpFirebaseFirestore()
 	setUpFirebaseAuth()
@@ -54,26 +61,28 @@ func init() {
 func setUpRoutes() {
 	server := fiber.New()
 
-	server.Get("/:id.:ext", getFileRoute)
-	server.Get("/oembed/:id.:ext", getOGEmbedRoute)
+	server.Get("/:file", getFileRoute)
+	server.Get("/oembed/:file", getOGEmbedRoute)
 
-	server.Static("/", "../client/public")
+	if cdnConfig.Production {
+		server.Static("/", "../client/public")
+	}
 
 	api := server.Group("/api")
 
 	// api.Get("/user", authorize, getUserRoute) // auth
 	// api.Post("/user", createUserRoute) // auth
-
-	api.Post("/upload", dummyMiddleware, uploadFileRoute) // auth
 	// api.Get("/ws", authorize, getWebSocket) // auth
 
 	// single files
-	api.Get("/file/:id", getFileInfoRoute)
-	// no reason to update files just yet
-	// api.Patch("/file/:id/info", authorize, updateFileInfoRoute) // auth
+	api.Post("/upload", dummyMiddleware, uploadFileRoute)     // auth
 	api.Delete("/file/:id", dummyMiddleware, deleteFileRoute) // auth
 
+	// list files
+	api.Get("/files", dummyMiddleware, getFilesRoute) // auth
+
 	// folder of files
+	api.Get("/folders", dummyMiddleware, getFoldersRoute)   // auth
 	api.Post("/folder", dummyMiddleware, createFolderRoute) // auth
 	api.Get("/folder/:id", getFolderRoute)
 	api.Patch("/folder/:id", dummyMiddleware, updateFolderRoute)  // auth
@@ -124,40 +133,4 @@ func setUpFirebaseAuth() {
 	}
 
 	log.Printf("Connected to Firebase Auth")
-}
-
-func setUpSpaces() {
-	sps, err := minio.New(
-		cdnConfig.SpacesConfig.SpacesEndpoint,
-		cdnConfig.SpacesConfig.SpacesAccessKey,
-		cdnConfig.SpacesConfig.SpacesSecretKey,
-		false,
-	)
-
-	cdnSpaces = sps
-
-	if err != nil {
-		log.Printf("Could not connect to DigitalOcean Spaces")
-		log.Fatal(err)
-		return
-	}
-
-	log.Printf("Connected to DigitalOcean Spaces")
-
-	bucketName := cdnConfig.SpacesConfig.SpacesName
-
-	err = cdnSpaces.MakeBucket(bucketName, cdnConfig.SpacesConfig.SpacesRegion)
-	if err != nil {
-		exists, bucketExistErr := cdnSpaces.BucketExists(bucketName)
-
-		if bucketExistErr == nil && exists {
-			log.Printf("We already own bucket \"%s\"", bucketName)
-		} else {
-			log.Printf("Unable to create bucket \"%s\"", bucketName)
-			log.Fatalln(err)
-			return
-		}
-	} else {
-		log.Printf("Successfully created bucket \"%s\"", bucketName)
-	}
 }

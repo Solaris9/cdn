@@ -1,3 +1,6 @@
 .vscode
 .env
 service-account.json
+node_modules
+public/build
+.routify

@@ -1,17 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gofiber/fiber/v2"
 )
 
 func getOGEmbedRoute(ctx *fiber.Ctx) error {
-	id, ext := ctx.Params("id"), ctx.Params("ext")
-	imageURL := fmt.Sprintf("%v/%v.%v", cdnConfig.SpacesConfig.SpacesUrl, id, ext)
+	file := ctx.Params("file")
+	imageURL := fmt.Sprintf("%v/%v", cdnConfig.SpacesConfig.SpacesUrl, file)
 
 	res, headErr := http.Head(imageURL)
 	if headErr != nil {
@@ -49,127 +51,198 @@ func getOGEmbedRoute(ctx *fiber.Ctx) error {
 			ProviderName: objProvider,
 		}
 
-		return ctx.Send(toJSON(jsonObj))
+		return ctx.JSON(jsonObj)
 	} else {
 		return ctx.Redirect(imageURL, fiber.StatusMovedPermanently)
 	}
 }
 
 func uploadFileRoute(ctx *fiber.Ctx) error {
-	file, respErr := UploadFile(ctx)
-	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+	s, err := session.NewSession(cdnS3Config)
+	if err != nil {
+		respErr := NewResponseByError(fiber.StatusBadRequest, err)
+		return ctx.JSON(respErr)
 	}
 
-	resp := ImageResponse{
+	file, respErr := UploadFile(s, ctx)
+	if respErr != nil {
+		return ctx.JSON(respErr)
+	}
+
+	url := fmt.Sprintf("%v/%v", cdnConfig.SpacesConfig.SpacesUrl, file)
+
+	resp := ImageResult{
 		Code:    200,
-		Url:     file.URL(),
+		Url:     url,
 		Success: true,
 	}
 
-	return ctx.Send(toJSON(resp))
+	return ctx.JSON(resp)
 }
 
 func getFileRoute(ctx *fiber.Ctx) error {
-	id, ext := ctx.Params("id"), ctx.Params("ext")
-	imageURL := fmt.Sprintf("%v/%v.%v", cdnConfig.SpacesConfig.SpacesUrl, id, ext)
+	file := ctx.Params("file")
+	imageURL := fmt.Sprintf("%v/%v", cdnConfig.SpacesConfig.SpacesUrl, file)
 
 	res, err := http.Head(imageURL)
 	if err != nil {
 		respErr := NewResponseByError(fiber.StatusInternalServerError, err)
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
 	if res.StatusCode != http.StatusOK {
 		respErr := NewResponse(res.StatusCode, "An error occurred redirecting to the image")
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
 	return ctx.Redirect(imageURL)
 }
 
-func getFileInfoRoute(ctx *fiber.Ctx) error {
-	id := ctx.Params("id")
-	file, respErr := FileFor(id)
-
-	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+func getFilesRoute(ctx *fiber.Ctx) error {
+	s, err := session.NewSession(cdnS3Config)
+	if err != nil {
+		respErr := NewResponseByError(fiber.StatusBadRequest, err)
+		return ctx.JSON(respErr)
 	}
 
-	return ctx.Send(file.ToJSON())
+	objects, objectsErr := GetFiles(s)
+	if objectsErr != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, objectsErr.Error())
+	}
+
+	data := fiber.Map{
+		"files":  objects,
+		"length": len(objects),
+	}
+
+	return ctx.JSON(data)
 }
 
 func deleteFileRoute(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
-
-	file, respErr := FileFor(id)
-	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+	s, err := session.NewSession(cdnS3Config)
+	if err != nil {
+		respErr := NewResponseByError(fiber.StatusBadRequest, err)
+		return ctx.JSON(respErr)
 	}
 
-	respErr = file.CheckOwner(ctx.Locals("user").(string))
+	respErr := CheckOwner(s, id, ctx.Locals("user").(string))
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
-	respErr = file.Delete()
+	respErr = DeleteFile(s, id)
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
-	return ctx.Send(toJSON(fiber.Map{
+	return ctx.JSON(fiber.Map{
 		"id":      id,
 		"success": true,
 		"code":    200,
-	}))
+	})
 }
 
 func createFolderRoute(ctx *fiber.Ctx) error {
+	ctx.Set("content-type", "application/json")
 	body := new(FolderPostRequest)
 
 	if err := ctx.BodyParser(body); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		respErr := NewResponseByError(fiber.StatusBadRequest, err)
+		return ctx.JSON(respErr)
 	}
 
 	if body.Name == "" {
 		respErr := NewResponse(fiber.StatusBadRequest, "Folder name required.")
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
 	folder, respErr := NewFolder(body.Name, ctx.Locals("user").(string))
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
-	return ctx.Send(folder.ToJSON())
+	return ctx.JSON(&FolderResult{
+		CreateTime: folder.CreateTime,
+		UpdateTime: folder.UpdateTime,
+		ID:         folder.Data.ID,
+		Name:       folder.Data.Name,
+	})
+}
+
+func getFoldersRoute(ctx *fiber.Ctx) error {
+	ctx.Set("content-type", "application/json")
+
+	firebaseCtx := context.Background()
+	docs, err := cdnFirestore.Collection("folders").Documents(firebaseCtx).GetAll()
+	if err != nil {
+		respErr := NewResponseByError(fiber.StatusInternalServerError, err)
+		return ctx.JSON(respErr)
+	}
+
+	folders := make([]*FoldersResult, len(docs))
+	for i, doc := range docs {
+		data := new(FolderData)
+		doc.DataTo(data)
+
+		folders[i] = &FoldersResult{
+			CreateTime: doc.CreateTime,
+			UpdateTime: doc.UpdateTime,
+			ID:         data.ID,
+			Name:       data.Name,
+			Size:       len(data.Files),
+		}
+	}
+
+	return ctx.JSON(folders)
 }
 
 func getFolderRoute(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
-	folder, respErr := FolderFor(id, true)
+	folder, respErr := FolderFor(id)
 
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
-	return ctx.Send(folder.ToJSON())
+	s, err := session.NewSession(cdnS3Config)
+	if err != nil {
+		respErr := NewResponseByError(fiber.StatusInternalServerError, err)
+		return ctx.JSON(respErr)
+	}
+
+	files, err := GetFilesByKeys(s, folder.Data.Files)
+	if err != nil {
+		respErr := NewResponseByError(fiber.StatusInternalServerError, err)
+		return ctx.JSON(respErr)
+	}
+
+	return ctx.JSON(&FolderResult{
+		CreateTime: folder.CreateTime,
+		UpdateTime: folder.UpdateTime,
+		ID:         folder.Data.ID,
+		Name:       folder.Data.Name,
+		Files:      files,
+	})
 }
 
 func updateFolderRoute(ctx *fiber.Ctx) error {
 	body := new(FolderPatchRequest)
+
 	if err := ctx.BodyParser(body); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		respErr := NewResponseByError(fiber.StatusBadRequest, err)
+		return ctx.JSON(respErr)
 	}
 
 	id := ctx.Params("id")
-	folder, respErr := FolderFor(id, false)
+	folder, respErr := FolderFor(id)
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
 	respErr = folder.CheckOwner(ctx.Locals("user").(string))
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
 	if body.Name != "" {
@@ -186,29 +259,40 @@ func updateFolderRoute(ctx *fiber.Ctx) error {
 
 	if folder.IsChanged() {
 		if respErr := folder.Save(); respErr != nil {
-			return ctx.Send(respErr.ToJSON())
+			return ctx.JSON(respErr)
 		}
 	}
 
-	return ctx.Send(folder.ToJSON())
+	return ctx.JSON(&FolderResult{
+		CreateTime: folder.CreateTime,
+		UpdateTime: folder.UpdateTime,
+		ID:         folder.Data.ID,
+		Name:       folder.Data.Name,
+	})
 }
 
 func deleteFolderRoute(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
-	folder, respErr := FolderFor(id, true)
+
+	folder, respErr := FolderFor(id)
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
 	respErr = folder.CheckOwner(ctx.Locals("user").(string))
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
 	respErr = folder.Delete()
 	if respErr != nil {
-		return ctx.Send(respErr.ToJSON())
+		return ctx.JSON(respErr)
 	}
 
-	return ctx.Send(folder.ToJSON())
+	return ctx.JSON(&FolderResult{
+		CreateTime: folder.CreateTime,
+		UpdateTime: folder.UpdateTime,
+		ID:         folder.Data.ID,
+		Name:       folder.Data.Name,
+	})
 }

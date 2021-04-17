@@ -11,10 +11,11 @@ import (
 )
 
 type Folder struct {
-	Files   []*File
-	Data    *FolderData
-	Created time.Time
-	Updates []firestore.Update
+	Files      []*File
+	Data       *FolderData
+	CreateTime time.Time
+	UpdateTime time.Time
+	Updates    []firestore.Update
 }
 
 type FolderData struct {
@@ -41,14 +42,15 @@ func NewFolder(name, owner string) (*Folder, *JSONResponse) {
 	}
 
 	folder := new(Folder)
-	folder.Created = doc.UpdateTime
+	folder.CreateTime = doc.UpdateTime
+	folder.UpdateTime = doc.UpdateTime
 	folder.Data = folderData
 
 	return folder, nil
 }
 
 // gets a folder, optionally cache all files in it
-func FolderFor(id string, withFiles bool) (*Folder, *JSONResponse) {
+func FolderFor(id string) (*Folder, *JSONResponse) {
 	firebaseCtx := context.Background()
 	folder := new(Folder)
 
@@ -61,74 +63,13 @@ func FolderFor(id string, withFiles bool) (*Folder, *JSONResponse) {
 		return nil, NewResponseByError(fiber.StatusInternalServerError, err)
 	}
 
-	folder.Created = doc.CreateTime
+	folder.CreateTime = doc.UpdateTime
+	folder.UpdateTime = doc.UpdateTime
 
 	folder.Data = new(FolderData)
 	doc.DataTo(folder.Data)
 
-	if withFiles {
-		folder.GetFiles()
-	}
-
 	return folder, nil
-}
-
-// caches the files
-func (folder *Folder) GetFiles() error {
-	firebaseCtx := context.Background()
-
-	docs, err := cdnFirestore.Collection("files").Where("ID", "in", folder.Data.Files).Documents(firebaseCtx).GetAll()
-
-	if err != nil {
-		return err
-	}
-
-	folder.Files = make([]*File, len(docs))
-
-	for _, doc := range docs {
-		fileData := new(FileData)
-		doc.DataTo(fileData)
-
-		file := &File{
-			Data:    fileData,
-			Created: doc.CreateTime,
-		}
-
-		folder.Files = append(folder.Files, file)
-	}
-
-	return nil
-}
-
-// returns a file
-func (folder *Folder) GetFile(id string) *File {
-	for _, file := range folder.Files {
-		if file.Data.ID == id {
-			return file
-		}
-	}
-
-	firebaseCtx := context.Background()
-
-	doc, err := cdnFirestore.Collection("files").Doc(id).Get(firebaseCtx)
-	if err != nil && status.Code(err) == codes.NotFound {
-		return nil
-	} else if err == nil {
-		fileData := new(FileData)
-		doc.DataTo(fileData)
-
-		file := &File{
-			Data:    fileData,
-			Created: doc.CreateTime,
-		}
-
-		folder.Data.Files = append(folder.Data.Files, id)
-		folder.Files = append(folder.Files, file)
-
-		return file
-	}
-
-	return nil
 }
 
 func (folder *Folder) IsChanged() bool {
@@ -153,10 +94,6 @@ func (folder *Folder) AddFiles(files []string, cacheFiles bool) {
 		Path:  "Files",
 		Value: folder.Data.Files,
 	})
-
-	if cacheFiles {
-		folder.GetFiles()
-	}
 }
 
 // a list of ids to remove
@@ -183,7 +120,7 @@ func (folder *Folder) CheckOwner(owner string) *JSONResponse {
 
 func (folder *Folder) Delete() *JSONResponse {
 	firebaseCtx := context.Background()
-	_, err := cdnFirestore.Collection("files").Doc(folder.Data.ID).Delete(firebaseCtx)
+	_, err := cdnFirestore.Collection("folders").Doc(folder.Data.ID).Delete(firebaseCtx)
 
 	if err != nil {
 		return NewResponseByError(fiber.StatusInternalServerError, err)
@@ -193,10 +130,16 @@ func (folder *Folder) Delete() *JSONResponse {
 }
 
 // converts the folder object to a json object
-func (folder *Folder) ToJSON() []byte {
+func (folder *Folder) ToJSON() *JSONModifier {
 	dataMap := NewJSONModifer(folder.Data)
-	dataMap.AddField("date", folder.Created)
-	return dataMap.ToJSON()
+	dataMap.AddField("created", folder.CreateTime)
+	dataMap.AddField("updated", folder.UpdateTime)
+	return dataMap
+}
+
+// converts the folder object to a json object
+func (folder *Folder) ToJSONMap() map[string]interface{} {
+	return folder.ToJSON().Map
 }
 
 func (folder *Folder) Save() *JSONResponse {
@@ -210,11 +153,11 @@ func (folder *Folder) Save() *JSONResponse {
 	return nil
 }
 
-func removeFile(files []*File, id string) []*File {
+func removeFile(files []string, id string) []string {
 	var index = -1
 
 	for i, file := range files {
-		if file.Data.ID == id {
+		if file == id {
 			index = i
 		}
 	}

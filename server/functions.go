@@ -137,10 +137,6 @@ func (response *JSONResponse) SetData(data interface{}) {
 	response.Data = data
 }
 
-func (response *JSONResponse) ToJSON() []byte {
-	return toJSON(response)
-}
-
 type JSONModifier struct {
 	Map map[string]interface{}
 }
