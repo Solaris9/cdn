@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -16,14 +15,18 @@ func authorize(ctx *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "No authorization token provided.")
 	}
 
-	_ctx := context.Background()
+	// _ctx := context.Background()
 
-	token, err := cdnAuth.VerifyIDToken(_ctx, authorization)
-	if err != nil {
-		return fiber.NewError(fiber.StatusUnauthorized, "Invalid authorization token provided.")
+	// token, err := cdnAuth.VerifyIDToken(_ctx, authorization)
+	// if err != nil {
+	// 	return fiber.NewError(fiber.StatusUnauthorized, "Invalid authorization token provided.")
+	// }
+
+	// ctx.Locals("user", token.UID)
+
+	if authorization != cdnConfig.Authorization {
+		return fiber.NewError(fiber.StatusUnauthorized, "No authorization token provided.")
 	}
-
-	ctx.Locals("user", token.UID)
 
 	return ctx.Next()
 }

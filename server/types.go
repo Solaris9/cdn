@@ -10,10 +10,10 @@ type User struct {
 }
 
 type Config struct {
-	SpacesConfig SpacesConfig
-	CdnEndpoint  string
-	AccessToken  string
-	Production   bool
+	SpacesConfig  SpacesConfig
+	CdnEndpoint   string
+	Authorization string
+	Production    bool
 }
 
 type SpacesConfig struct {

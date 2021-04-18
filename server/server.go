@@ -26,7 +26,7 @@ func main() {
 }
 
 func init() {
-	err := godotenv.Load()
+	err := godotenv.Load("../.env")
 	if err != nil {
 		log.Printf("Error loading .env file")
 		log.Fatal(err)
@@ -42,9 +42,13 @@ func init() {
 			SpacesName:      os.Getenv("SPACES_NAME"),
 			SpacesRegion:    os.Getenv("SPACES_REGION"),
 		},
-		CdnEndpoint: os.Getenv("CDN_ENDPOINT"),
-		AccessToken: os.Getenv("ACCESS_TOKEN"),
-		Production:  os.Getenv("PRODUCTION") != "false",
+		CdnEndpoint:   os.Getenv("CDN_ENDPOINT"),
+		Authorization: os.Getenv("AUTHORIZATION"),
+		Production:    os.Getenv("PRODUCTION") != "false",
+	}
+
+	if cdnConfig.Authorization == "" {
+		log.Fatal("No Authorization token provided, closing...")
 	}
 
 	cdnS3Config = &aws.Config{
@@ -92,7 +96,7 @@ func setUpRoutes() {
 }
 
 func setUpFirebase() {
-	options := option.WithCredentialsFile("./service-account.json")
+	options := option.WithCredentialsFile("../service-account.json")
 	ctx := context.Background()
 
 	fbApp, err := firebase.NewApp(ctx, nil, options)

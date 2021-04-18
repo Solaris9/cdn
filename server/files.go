@@ -41,7 +41,6 @@ func UploadFile(s *session.Session, ctx *fiber.Ctx) (string, *JSONResponse) {
 	uploadedFile.Close()
 
 	fileName := randSeq(8) + filepath.Ext(fileHeader.Filename)
-	fileOwner := ctx.Locals("user").(string)
 
 	object := s3.PutObjectInput{
 		Bucket:               aws.String(cdnConfig.SpacesConfig.SpacesName),
@@ -51,9 +50,6 @@ func UploadFile(s *session.Session, ctx *fiber.Ctx) (string, *JSONResponse) {
 		ContentLength:        aws.Int64(size),
 		ContentType:          aws.String(http.DetectContentType(buffer)),
 		ServerSideEncryption: aws.String("AES256"),
-		Metadata: map[string]*string{
-			"owner": aws.String(fileOwner),
-		},
 	}
 
 	_, err = s3.New(s).PutObject(&object)
@@ -64,23 +60,23 @@ func UploadFile(s *session.Session, ctx *fiber.Ctx) (string, *JSONResponse) {
 	return fileName, nil
 }
 
-func CheckOwner(s *session.Session, file, owner string) *JSONResponse {
-	object := s3.HeadObjectInput{
-		Bucket: aws.String(cdnConfig.SpacesConfig.SpacesName),
-		Key:    aws.String(file),
-	}
+// func CheckOwner(s *session.Session, file, owner string) *JSONResponse {
+// 	object := s3.HeadObjectInput{
+// 		Bucket: aws.String(cdnConfig.SpacesConfig.SpacesName),
+// 		Key:    aws.String(file),
+// 	}
 
-	out, err := s3.New(s).HeadObject(&object)
-	if err != nil {
-		return NewResponseByError(fiber.StatusInternalServerError, err)
-	}
+// 	out, err := s3.New(s).HeadObject(&object)
+// 	if err != nil {
+// 		return NewResponseByError(fiber.StatusInternalServerError, err)
+// 	}
 
-	if *out.Metadata["Owner"] != owner {
-		return NewResponse(fiber.StatusForbidden, "Cannot delete file not owned.")
-	}
+// 	if *out.Metadata["Owner"] != owner {
+// 		return NewResponse(fiber.StatusForbidden, "Cannot delete file not owned.")
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func DeleteFile(s *session.Session, file string) *JSONResponse {
 	object := &s3.DeleteObjectInput{

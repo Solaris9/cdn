@@ -126,12 +126,7 @@ func deleteFileRoute(ctx *fiber.Ctx) error {
 		return ctx.JSON(respErr)
 	}
 
-	respErr := CheckOwner(s, id, ctx.Locals("user").(string))
-	if respErr != nil {
-		return ctx.JSON(respErr)
-	}
-
-	respErr = DeleteFile(s, id)
+	respErr := DeleteFile(s, id)
 	if respErr != nil {
 		return ctx.JSON(respErr)
 	}
@@ -157,7 +152,7 @@ func createFolderRoute(ctx *fiber.Ctx) error {
 		return ctx.JSON(respErr)
 	}
 
-	folder, respErr := NewFolder(body.Name, ctx.Locals("user").(string))
+	folder, respErr := NewFolder(body.Name)
 	if respErr != nil {
 		return ctx.JSON(respErr)
 	}
@@ -240,11 +235,6 @@ func updateFolderRoute(ctx *fiber.Ctx) error {
 		return ctx.JSON(respErr)
 	}
 
-	respErr = folder.CheckOwner(ctx.Locals("user").(string))
-	if respErr != nil {
-		return ctx.JSON(respErr)
-	}
-
 	if body.Name != "" {
 		folder.Data.Name = body.Name
 	}
@@ -275,11 +265,6 @@ func deleteFolderRoute(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
 
 	folder, respErr := FolderFor(id)
-	if respErr != nil {
-		return ctx.JSON(respErr)
-	}
-
-	respErr = folder.CheckOwner(ctx.Locals("user").(string))
 	if respErr != nil {
 		return ctx.JSON(respErr)
 	}

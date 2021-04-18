@@ -20,18 +20,16 @@ type Folder struct {
 
 type FolderData struct {
 	ID    string   `json:"id"`
-	Owner string   `json:"owner"`
 	Name  string   `json:"name"`
 	Files []string `json:"files"`
 }
 
 // creates a new folder
-func NewFolder(name, owner string) (*Folder, *JSONResponse) {
+func NewFolder(name string) (*Folder, *JSONResponse) {
 	firebaseCtx := context.Background()
 	folderID := randSeq(8)
 	folderData := &FolderData{
 		ID:    folderID,
-		Owner: owner,
 		Name:  name,
 		Files: make([]string, 0),
 	}
@@ -110,13 +108,13 @@ func (folder *Folder) RemoveFiles(files []string) {
 	})
 }
 
-func (folder *Folder) CheckOwner(owner string) *JSONResponse {
-	if folder.Data.Owner != owner {
-		return NewResponse(fiber.StatusForbidden, "Cannot delete folder not owned.")
-	}
+// func (folder *Folder) CheckOwner(owner string) *JSONResponse {
+// 	if folder.Data.Owner != owner {
+// 		return NewResponse(fiber.StatusForbidden, "Cannot delete folder not owned.")
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func (folder *Folder) Delete() *JSONResponse {
 	firebaseCtx := context.Background()
