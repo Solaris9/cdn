@@ -11,6 +11,34 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+func verifyAuthRoute(ctx *fiber.Ctx) error {
+	body := new(TokenResponse)
+
+	if err := ctx.BodyParser(body); err != nil {
+		respErr := NewResponseByError(fiber.StatusBadRequest, err)
+		respErr.SetSuccess(false)
+		return ctx.JSON(respErr)
+	}
+
+	if body.Token == "" {
+		return ctx.JSON(&TokenRequest{
+			Success: false,
+			Message: "No authorization token provided.",
+		})
+	}
+
+	if body.Token != cdnConfig.Authorization {
+		return ctx.JSON(&TokenRequest{
+			Success: false,
+			Message: "Invalid authorization token provided.",
+		})
+	}
+
+	return ctx.JSON(&TokenRequest{
+		Success: true,
+	})
+}
+
 func getOGEmbedRoute(ctx *fiber.Ctx) error {
 	file := ctx.Params("file")
 	imageURL := fmt.Sprintf("%v/%v", cdnConfig.SpacesConfig.SpacesUrl, file)
@@ -69,7 +97,7 @@ func uploadFileRoute(ctx *fiber.Ctx) error {
 		return ctx.JSON(respErr)
 	}
 
-	url := fmt.Sprintf("%v/%v", cdnConfig.SpacesConfig.SpacesUrl, file)
+	url := fmt.Sprintf("%v/%v", cdnConfig.CdnEndpoint, file)
 
 	resp := ImageResult{
 		Code:    200,
@@ -139,7 +167,6 @@ func deleteFileRoute(ctx *fiber.Ctx) error {
 }
 
 func createFolderRoute(ctx *fiber.Ctx) error {
-	ctx.Set("content-type", "application/json")
 	body := new(FolderPostRequest)
 
 	if err := ctx.BodyParser(body); err != nil {
@@ -166,8 +193,6 @@ func createFolderRoute(ctx *fiber.Ctx) error {
 }
 
 func getFoldersRoute(ctx *fiber.Ctx) error {
-	ctx.Set("content-type", "application/json")
-
 	firebaseCtx := context.Background()
 	docs, err := cdnFirestore.Collection("folders").Documents(firebaseCtx).GetAll()
 	if err != nil {

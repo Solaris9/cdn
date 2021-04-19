@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/joho/godotenv"
 	"google.golang.org/api/option"
 )
@@ -65,6 +66,10 @@ func init() {
 func setUpRoutes() {
 	server := fiber.New()
 
+	server.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+	}))
+
 	server.Get("/:file", getFileRoute)
 	server.Get("/oembed/:file", getOGEmbedRoute)
 
@@ -77,22 +82,21 @@ func setUpRoutes() {
 	// api.Get("/user", authorize, getUserRoute) // auth
 	// api.Post("/user", createUserRoute) // auth
 	// api.Get("/ws", authorize, getWebSocket) // auth
+	api.Post("/verify", verifyAuthRoute) // auth
 
-	// single files
-	api.Post("/upload", dummyMiddleware, uploadFileRoute)     // auth
-	api.Delete("/file/:id", dummyMiddleware, deleteFileRoute) // auth
+	// files
+	api.Post("/upload", authorize, uploadFileRoute)      // auth
+	api.Get("/files", authorize, getFilesRoute)          // auth
+	api.Delete("/files/:id", authorize, deleteFileRoute) // auth
 
-	// list files
-	api.Get("/files", dummyMiddleware, getFilesRoute) // auth
+	// folders
+	api.Get("/folders", authorize, getFoldersRoute)    // auth
+	api.Post("/folders", authorize, createFolderRoute) // auth
+	api.Get("/folders/:id", getFolderRoute)
+	api.Patch("/folders/:id", authorize, updateFolderRoute)  // auth
+	api.Delete("/folders/:id", authorize, deleteFolderRoute) // auth
 
-	// folder of files
-	api.Get("/folders", dummyMiddleware, getFoldersRoute)   // auth
-	api.Post("/folder", dummyMiddleware, createFolderRoute) // auth
-	api.Get("/folder/:id", getFolderRoute)
-	api.Patch("/folder/:id", dummyMiddleware, updateFolderRoute)  // auth
-	api.Delete("/folder/:id", dummyMiddleware, deleteFolderRoute) // auth
-
-	log.Fatal(server.Listen(":3000"))
+	log.Fatal(server.Listen(":3001"))
 }
 
 func setUpFirebase() {

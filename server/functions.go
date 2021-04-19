@@ -31,11 +31,6 @@ func authorize(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
-func dummyMiddleware(ctx *fiber.Ctx) error {
-	ctx.Locals("user", "solaris")
-	return ctx.Next()
-}
-
 func contains(values []string, value string) bool {
 	for _, elem := range values {
 		if elem == value {

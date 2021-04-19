@@ -78,3 +78,12 @@ type Embed struct {
 	AuthorName   string `json:"author_name"`
 	ProviderName string `json:"provider_name"`
 }
+
+type TokenResponse struct {
+	Token string `json:"token"`
+}
+
+type TokenRequest struct {
+	Success bool   `json:"success"`
+	Message string `json:"message,omitempty"`
+}
