@@ -27,7 +27,7 @@ func main() {
 }
 
 func init() {
-	err := godotenv.Load("../.env")
+	err := godotenv.Load()
 	if err != nil {
 		log.Printf("Error loading .env file")
 		log.Fatal(err)
@@ -52,6 +52,12 @@ func init() {
 		log.Fatal("No Authorization token provided, closing...")
 	}
 
+	mode := "DEVELOPMENT"
+	if cdnConfig.Production {
+		mode = "PRODUCTION"
+	}
+	log.Printf("Starting in %v mode", mode)
+
 	cdnS3Config = &aws.Config{
 		Credentials: credentials.NewStaticCredentials(cdnConfig.SpacesConfig.SpacesAccessKey, cdnConfig.SpacesConfig.SpacesSecretKey, ""),
 		Endpoint:    aws.String(cdnConfig.SpacesConfig.SpacesEndpoint),
@@ -68,14 +74,15 @@ func setUpRoutes() {
 
 	server.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
+		AllowHeaders: "Origin, Content-Type, Accept, User-Agent",
 	}))
+
+	if cdnConfig.Production {
+		server.Static("/", "./public")
+	}
 
 	server.Get("/:file", getFileRoute)
 	server.Get("/oembed/:file", getOGEmbedRoute)
-
-	if cdnConfig.Production {
-		server.Static("/", "../client/public")
-	}
 
 	api := server.Group("/api")
 
@@ -96,11 +103,11 @@ func setUpRoutes() {
 	api.Patch("/folders/:id", authorize, updateFolderRoute)  // auth
 	api.Delete("/folders/:id", authorize, deleteFolderRoute) // auth
 
-	log.Fatal(server.Listen(":3001"))
+	log.Fatal(server.Listen(":3000"))
 }
 
 func setUpFirebase() {
-	options := option.WithCredentialsFile("../service-account.json")
+	options := option.WithCredentialsFile("service-account.json")
 	ctx := context.Background()
 
 	fbApp, err := firebase.NewApp(ctx, nil, options)

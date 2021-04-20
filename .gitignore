@@ -3,3 +3,4 @@
 service-account.json
 node_modules
 client/public/build
+build

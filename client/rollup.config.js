@@ -1,5 +1,6 @@
 import svelte from 'rollup-plugin-svelte';
 import commonjs from '@rollup/plugin-commonjs';
+import dev from 'rollup-plugin-dev';
 import resolve from '@rollup/plugin-node-resolve';
 import livereload from 'rollup-plugin-livereload';
 import { terser } from 'rollup-plugin-terser';
@@ -54,12 +55,19 @@ export default {
         commonjs(),
         typescript({
             rootDir: './src',
-            sourceMap: !production,
+            sourceMap: production,
             inlineSources: !production,
         }),
         !production && serve(),
         !production && livereload('public'),
         production && terser(),
+        !production &&
+            dev({
+                dirs: ['public'],
+                port: 3000,
+                proxy: { '/api/*': 'http://localhost:3000/' },
+                spa: true,
+            }),
     ],
     watch: {
         clearScreen: false,

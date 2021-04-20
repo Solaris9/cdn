@@ -87,3 +87,7 @@ type TokenRequest struct {
 	Success bool   `json:"success"`
 	Message string `json:"message,omitempty"`
 }
+
+type ImageResponseQuery struct {
+	Download string `query:"download"`
+}

@@ -14,7 +14,7 @@
             },
         };
 
-        const res = await fetch(`http://localhost:3001/api/verify`, requestInit).then((res) => res.json());
+        const res = await fetch(`/api/verify`, requestInit).then((res) => res.json());
 
         if (!res.success) return (error = res.message);
         if (error) error = null;

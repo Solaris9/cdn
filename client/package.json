@@ -5,8 +5,8 @@
     "scripts": {
         "dev": "run-p rollup:watch start:dev",
         "build": "run-p rollup:build",
-        "start": "sirv public --single --port 3000",
-        "start:dev": "sirv public --dev --single --port 3000",
+        "start": "sirv public --single --port 3001",
+        "start:dev": "sirv public --dev --single --port 3001",
         "rollup:build": "rollup -c",
         "rollup:watch": "rollup -cw"
     },
@@ -18,6 +18,7 @@
         "npm-run-all": "^4.1.5",
         "rollup": "^2.3.4",
         "rollup-plugin-css-only": "^3.1.0",
+        "rollup-plugin-dev": "^1.1.3",
         "rollup-plugin-livereload": "^2.0.0",
         "rollup-plugin-svelte": "^7.0.0",
         "rollup-plugin-terser": "^7.0.0",

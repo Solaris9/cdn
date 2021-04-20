@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -109,21 +110,64 @@ func uploadFileRoute(ctx *fiber.Ctx) error {
 }
 
 func getFileRoute(ctx *fiber.Ctx) error {
-	file := ctx.Params("file")
-	imageURL := fmt.Sprintf("%v/%v", cdnConfig.SpacesConfig.SpacesUrl, file)
+	key := ctx.Params("id")
 
+	fmt.Println("Endpoint Hit: getImage")
+
+	queries := new(ImageResponseQuery)
+
+	if queryErr := ctx.QueryParser(queries); queryErr != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, queryErr.Error())
+	}
+
+	imageURL := fmt.Sprintf("%s/%s", cdnConfig.SpacesConfig.SpacesUrl, key)
+	oembedURL := fmt.Sprintf("%s/oembed/%s", cdnConfig.CdnEndpoint, key)
 	res, err := http.Head(imageURL)
 	if err != nil {
-		respErr := NewResponseByError(fiber.StatusInternalServerError, err)
-		return ctx.JSON(respErr)
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 
 	if res.StatusCode != http.StatusOK {
-		respErr := NewResponse(res.StatusCode, "An error occurred redirecting to the image")
-		return ctx.JSON(respErr)
+		return fiber.NewError(res.StatusCode, "An error occurred redirecting to the image")
 	}
 
-	return ctx.Redirect(imageURL)
+	if queries.Download == "true" {
+		ctx.Set("Content-Type", res.Header.Values("content-type")[0])
+		ctx.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%v"`, key))
+		ctx.Set("Content-Length", fmt.Sprintf("%v", res.ContentLength))
+
+		resp, err := http.Get(imageURL)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		}
+
+		defer resp.Body.Close()
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		}
+
+		return ctx.Send(body)
+	}
+
+	if ctx.Get("User-Agent") == "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)" {
+		ctx.Type("html")
+		return ctx.Send([]byte(fmt.Sprintf(
+			`<!DOCTYPE html>
+			<html>
+				<head>
+					<meta name="theme-color" content="#dd9323">
+					<meta property="og:title" content="%v">
+					<meta content="%v" property="og:image">
+					<link type="application/json+oembed" href="%v" />
+				</head>
+			</html>`,
+			key, imageURL, oembedURL)),
+		)
+	} else {
+		return ctx.Redirect(imageURL, fiber.StatusMovedPermanently)
+	}
 }
 
 func getFilesRoute(ctx *fiber.Ctx) error {
