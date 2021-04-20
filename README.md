@@ -1,4 +1,4 @@
-# New Document# CDN
+# CDN
 
 This is my own personal CDN written in GO and Svelte using DigitalOceans Spaces.
 
